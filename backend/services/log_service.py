@@ -1,8 +1,12 @@
 from typing import Type, Any, Dict, List
 from pydantic import BaseModel, ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.future import select
+from sqlalchemy import and_
 from backend.registry.log_type_registry import LOG_TYPE_REGISTRY
 from backend.models.log_entry import LogEntry
+from backend.utils.filter_builder import build_dynamic_conditions
+from backend.schemas.log_filters import DynamicFilter
 
 
 def parse_log_type_data(log_type: str, log_type_data: Dict) -> BaseModel:
@@ -15,7 +19,12 @@ def parse_log_type_data(log_type: str, log_type_data: Dict) -> BaseModel:
         raise ValueError(f"Invalid data for log entry: {log_type_data}")
     return log_type_data_ins
 
-
+def validate_log_type(log_type: str) -> bool:
+    log_entry_type = LOG_TYPE_REGISTRY.get(log_type, None)
+    if log_entry_type:
+        return True
+    else:
+        raise ValueError(f"Unrecognized log type: {log_type}")
 
 async def create_log_entry(
     db: AsyncSession,
@@ -52,3 +61,31 @@ async def create_bulk_log_entries(
     for log in new_logs:
         await db.refresh(log)
     return new_logs
+
+async def get_all_logs(db: AsyncSession) -> List[LogEntry]:
+    """
+    Result is the lazyily loaded results.
+    .scalars seperates a big tuple of ORM objects into a list of many ORM objects
+    .all loads the results (necessary bc they only lazily exist up until that point)
+    """
+    query = select(LogEntry)
+    result = await db.execute(query)
+    return result.scalars().all()
+
+async def get_filtered_logs(db: AsyncSession, filter: DynamicFilter):
+    stmt = select(LogEntry)
+    conditions = []
+
+    if filter.log_type:
+        validate_log_type(filter.log_type)
+        conditions.append(LogEntry.log_type == filter.log_type)
+
+    if filter.filters:
+        dynamic_conditions = build_dynamic_conditions(filter.filters)
+        conditions.extend(dynamic_conditions)
+
+    if conditions:
+        stmt = stmt.where(and_(*conditions))
+
+    result = await db.execute(stmt)
+    return result.scalars().all()

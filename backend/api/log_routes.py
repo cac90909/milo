@@ -6,6 +6,7 @@ from backend.schemas.log_request import CreateLogRequest, CreateBulkLogRequest
 from backend.schemas.log_response import LogEntryResponse
 from backend.services import log_service
 from backend.models.log_entry import LogEntry
+from backend.schemas.log_filters import DynamicFilter
 
 router = APIRouter(prefix="/logs", tags=["Logs"])
 
@@ -41,4 +42,17 @@ async def create_logs(
         return new_log_list
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    
+@router.get("/", response_model=List[LogEntryResponse])
+async def get_all_logs(db: AsyncSession = Depends(get_db)):
+    logs = await log_service.get_all_logs(db)
+    return logs
+
+@router.post("/filter", response_model=List[LogEntryResponse])
+async def filter_logs(
+    filters: DynamicFilter,
+    db: AsyncSession = Depends(get_db)
+):
+    logs = await log_service.get_filtered_logs(db, filters)
+    return logs
 
