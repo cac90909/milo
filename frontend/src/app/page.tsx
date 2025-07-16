@@ -1,4 +1,5 @@
 // frontend/src/app/page.tsx
+// test
 'use client';
 
 import Link from 'next/link';
